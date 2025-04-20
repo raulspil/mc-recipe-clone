@@ -31,7 +31,6 @@ const html = await cloudscraper.get(url, {
       'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8'
   }
 });
-const $ = load(html);
    // now load the raw HTML string into Cheerio
    const $ = load(html);
 
