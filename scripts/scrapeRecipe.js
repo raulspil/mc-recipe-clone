@@ -23,70 +23,73 @@ async function main() {
   const { data: html } = await axios.get(url);
   const $ = load(html);
 
-  // 2) Extract fields (selectors based on MindfulChef markup)
-  const name = $('h1.css-s3pb72').first().text().trim();
-  const desc = $('div.css-1c4tiag').first().text().trim();
-  const img = $('img[alt*="Salmon Traybake"]').attr('src') ||
-              $('img[alt]').first().attr('src');
-  // times & servings
-  const infoLabels = $('span.css-135ql6c').toArray().map(el => $(el).text().trim());
-  const infoValues = $('a.css-8h2e5c, span.css-d9hq7u').toArray().map(el => $(el).text().trim());
-  const info = Object.fromEntries(infoLabels.map((lbl,i) => [lbl.replace(':',''), infoValues[i]]));
-  // Ingredients
-  const ingredients = $('section.ingredients ul li').toArray().map(li => $(li).text().trim());
-  // Instructions
-  const sections = [];
-  $('section.instructions .instruction-section').each((_, sec) => {
-    const title = $(sec).find('h3').text().trim();
-    const steps = $(sec).find('.content p').toArray().map(p => $(p).text().trim());
-    sections.push({ title, steps });
-  });
-  // Nutrition
-  const nutrition = {};
-  $('table.nutrition tr').each((_, tr) => {
-    const [th, td] = $(tr).find('th,td').toArray();
-    nutrition[$(th).text().trim()] = $(td).text().trim();
-  });
+  // 2) Locate and parse the Recipe JSON‑LD block
+  const allJsonLd = $('script[type="application/ld+json"]')
+    .map((i, el) => {
+      try { return JSON.parse($(el).html()); }
+      catch (_) { return null; }
+    })
+    .get();
+  const recipeData = allJsonLd.find(obj => obj && obj['@type'] === 'Recipe');
+  if (!recipeData) {
+    throw new Error('Could not find Recipe JSON‑LD on page');
+  }
 
-  // 3) Build JSON‑LD
+  // 3) Extract fields straight from the JSON‑LD
+  const name        = recipeData.name || '';
+  const desc        = recipeData.description || '';
+  const img         = Array.isArray(recipeData.image) ? recipeData.image[0] : recipeData.image || '';
+  const prep        = recipeData.prepTime    || '';
+  const cook        = recipeData.cookTime    || '';
+  const total       = recipeData.totalTime   || '';
+  const recipeYield = recipeData.recipeYield || '';
+  const ingredients = recipeData.recipeIngredient || [];
+  const nutritionData = recipeData.nutrition || {};
+  const sections = Array.isArray(recipeData.recipeInstructions)
+    ? recipeData.recipeInstructions
+        .map(sec => {
+          if (sec['@type'] === 'HowToSection') {
+            return {
+              title: sec.name,
+              steps: sec.itemListElement.map(s => s.text)
+            };
+          } else if (sec['@type'] === 'HowToStep') {
+            return {
+              title: sec.name || '',
+              steps: [sec.text]
+            };
+          }
+          return null;
+        })
+        .filter(Boolean)
+    : [];
+
+// ── SNIPPET 2: Replace old JSON‑LD builder (Step 3) with clean re‑emit ──
+
+  // 3) Build JSON‑LD (re‑emit a clean version)
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "Recipe",
     name,
     description: desc,
     image: img,
-    
-    // Some recipes use different labels (“Prep”, “Cook”, “Total”), so guard against undefined:
-    prepTime: (() => {
-      const raw = info['Prep'] || '';
-      const m = raw.match(/\d+/);
-      return m ? `PT${m[0]}M` : '';
-    })(),
-    cookTime: (() => {
-      const raw = info['Cook'] || '';
-      const m = raw.match(/\d+/);
-      return m ? `PT${m[0]}M` : '';
-    })(),
-    totalTime: (() => {
-      const raw = info['Total'] || '';
-      const m = raw.match(/\d+/);
-      return m ? `PT${m[0]}M` : '';
-    })(),
-    
-    recipeYield: info['Serves'],
+    prepTime: prep,
+    cookTime: cook,
+    totalTime: total,
+    recipeYield,
     recipeIngredient: ingredients,
     nutrition: {
-      "@type":"NutritionInformation",
-      calories: nutrition['Calories'],
-      proteinContent: nutrition['Protein'],
-      carbohydrateContent: nutrition['Carbs'],
-      fatContent: nutrition['Fat']
+      "@type": "NutritionInformation",
+      calories:            nutritionData.calories            || '',
+      proteinContent:      nutritionData.proteinContent      || '',
+      carbohydrateContent: nutritionData.carbohydrateContent || '',
+      fatContent:          nutritionData.fatContent          || ''
     },
     recipeInstructions: sections.map(sec => ({
-      "@type": sec.steps.length>1 ? "HowToSection" : "HowToStep",
+      "@type": sec.steps.length > 1 ? "HowToSection" : "HowToStep",
       name: sec.title,
-      ...(sec.steps.length>1
-        ? { itemListElement: sec.steps.map(s => ({ "@type":"HowToStep","text": s })) }
+      ...(sec.steps.length > 1
+        ? { itemListElement: sec.steps.map(s => ({ "@type": "HowToStep", text: s })) }
         : { text: sec.steps[0] })
     }))
   };
