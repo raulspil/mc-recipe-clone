@@ -55,9 +55,24 @@ async function main() {
     name,
     description: desc,
     image: img,
-    prepTime: `PT${info['Prep'].match(/\d+/)[0]}M`,
-    cookTime: `PT${info['Cook'].match(/\d+/)[0]}M`,
-    totalTime: `PT${info['Total'].match(/\d+/)[0]}M`,
+    
+    // Some recipes use different labels (“Prep”, “Cook”, “Total”), so guard against undefined:
+    prepTime: (() => {
+      const raw = info['Prep'] || '';
+      const m = raw.match(/\d+/);
+      return m ? `PT${m[0]}M` : '';
+    })(),
+    cookTime: (() => {
+      const raw = info['Cook'] || '';
+      const m = raw.match(/\d+/);
+      return m ? `PT${m[0]}M` : '';
+    })(),
+    totalTime: (() => {
+      const raw = info['Total'] || '';
+      const m = raw.match(/\d+/);
+      return m ? `PT${m[0]}M` : '';
+    })(),
+    
     recipeYield: info['Serves'],
     recipeIngredient: ingredients,
     nutrition: {
