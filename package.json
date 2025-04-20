@@ -1,4 +1,5 @@
 {
+  "type": "module",
   "name": "mc-recipe-clone",
   "version": "1.0.0",
   "scripts": {
