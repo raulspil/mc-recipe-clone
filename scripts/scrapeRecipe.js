@@ -18,9 +18,19 @@ async function main() {
     console.error('Usage: node scrapeRecipe.js <url> <outputPath>');
     process.exit(1);
   }
-
-  // 1) Fetch page
-  const { data: html } = await axios.get(url);
+  
+  // 1) Fetch page (spoof a real browser so Cloudflare lets us through)
+  const { data: html } = await axios.get(url, {
+    headers: {
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
+        'AppleWebKit/537.36 (KHTML, like Gecko) ' +
+        'Chrome/115.0.0.0 Safari/537.36',
+      'Accept':
+        'text/html,application/xhtml+xml,application/xml;' +
+        'q=0.9,image/avif,image/webp,*/*;q=0.8'
+    }
+  });
   const $ = load(html);
 
   // 2) Locate and parse the Recipe JSON‑LD block
