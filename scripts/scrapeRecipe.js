@@ -20,19 +20,18 @@ async function main() {
     process.exit(1);
   }
   
-  // 1) Fetch with Cloudflare‐scraper so we get the real HTML (including JSON‑LD)
-   const html = await cloudscraper({
-     method: 'GET',
-     uri: url,
-     headers: {
-       'User-Agent':
-         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
-         'AppleWebKit/537.36 (KHTML, like Gecko) ' +
-         'Chrome/115.0.0.0 Safari/537.36',
-       'Accept':
-         'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8'
-     }
-   });
+// 1) Fetch with Cloudflare‑scraper so we get the real HTML (including JSON‑LD)
+const html = await cloudscraper.get(url, {
+  headers: {
+    'User-Agent':
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
+      'AppleWebKit/537.36 (KHTML, like Gecko) ' +
+      'Chrome/115.0.0.0 Safari/537.36',
+    'Accept':
+      'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8'
+  }
+});
+const $ = load(html);
    // now load the raw HTML string into Cheerio
    const $ = load(html);
 
