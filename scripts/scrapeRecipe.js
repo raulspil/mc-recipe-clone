@@ -9,8 +9,9 @@
  */
 import fs from 'fs';
 import axios from 'axios';
-import cheerio from 'cheerio';
+import { load } from 'cheerio';
 import slugify from 'slugify';
+import cloudscraper from 'cloudscraper';
 
 async function main() {
   const [,, url, outPath] = process.argv;
@@ -18,60 +19,104 @@ async function main() {
     console.error('Usage: node scrapeRecipe.js <url> <outputPath>');
     process.exit(1);
   }
+  
+// 1) Fetch with Cloudflare‐scraper so we get the real HTML (including JSON‑LD)
+const html = await cloudscraper.get(url, {
+  headers: {
+    'User-Agent':
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
+      'AppleWebKit/537.36 (KHTML, like Gecko) ' +
+      'Chrome/115.0.0.0 Safari/537.36',
+    'Accept':
+      'text/html,application/xhtml+xml,application/xml;' +
+      'q=0.9,image/avif,image/webp,*/*;q=0.8'
+  }
+});
+  const $ = load(html);
 
-  // 1) Fetch page
-  const { data: html } = await axios.get(url);
-  const $ = cheerio.load(html);
+   // 2) Try JSON‑LD first—if missing, fall back to manual DOM scraping
+  const allJsonLd = $('script[type="application/ld+json"]')
+    .map((i, el) => {
+      try { return JSON.parse($(el).html()); }
+      catch (_) { return null; }
+    })
+    .get();
+  const recipeData = allJsonLd.find(o => o && o['@type'] === 'Recipe');
 
-  // 2) Extract fields (selectors based on MindfulChef markup)
-  const name = $('h1.css-s3pb72').first().text().trim();
-  const desc = $('div.css-1c4tiag').first().text().trim();
-  const img = $('img[alt*="Salmon Traybake"]').attr('src') ||
-              $('img[alt]').first().attr('src');
-  // times & servings
-  const infoLabels = $('span.css-135ql6c').toArray().map(el => $(el).text().trim());
-  const infoValues = $('a.css-8h2e5c, span.css-d9hq7u').toArray().map(el => $(el).text().trim());
-  const info = Object.fromEntries(infoLabels.map((lbl,i) => [lbl.replace(':',''), infoValues[i]]));
-  // Ingredients
-  const ingredients = $('section.ingredients ul li').toArray().map(li => $(li).text().trim());
-  // Instructions
-  const sections = [];
-  $('section.instructions .instruction-section').each((_, sec) => {
-    const title = $(sec).find('h3').text().trim();
-    const steps = $(sec).find('.content p').toArray().map(p => $(p).text().trim());
-    sections.push({ title, steps });
-  });
-  // Nutrition
-  const nutrition = {};
-  $('table.nutrition tr').each((_, tr) => {
-    const [th, td] = $(tr).find('th,td').toArray();
-    nutrition[$(th).text().trim()] = $(td).text().trim();
-  });
+  // hybrid extraction
+  let name, desc, img, prep, cook, total, recipeYield, ingredients, nutritionData, sections;
+  if (recipeData && recipeData.name) {
+    // JSON‑LD extraction
+    name        = recipeData.name || '';
+    desc        = recipeData.description || '';
+    img         = Array.isArray(recipeData.image) ? recipeData.image[0] : recipeData.image || '';
+    prep        = recipeData.prepTime    || '';
+    cook        = recipeData.cookTime    || '';
+    total       = recipeData.totalTime   || '';
+    recipeYield = recipeData.recipeYield || '';
+    ingredients = recipeData.recipeIngredient || [];
+    nutritionData = recipeData.nutrition || {};
+    sections = Array.isArray(recipeData.recipeInstructions)
+      ? recipeData.recipeInstructions.map(sec => {
+          if (sec['@type'] === 'HowToSection') {
+            return { title: sec.name, steps: sec.itemListElement.map(s => s.text) };
+          }
+          return { title: sec.name || '', steps: [sec.text] };
+        })
+      : [];
+  } else {
+    // manual DOM scraping fallback (same as Salmon page)
+    name = $('h1.css-s3pb72').first().text().trim();
+    desc = $('div.css-1c4tiag').first().text().trim();
+    img  = $('img[alt]').first().attr('src') || '';
+    // times & servings
+    const labels = $('span.css-135ql6c').toArray().map(el => $(el).text().trim());
+    const vals   = $('a.css-8h2e5c, span.css-d9hq7u').toArray().map(el => $(el).text().trim());
+    const info   = Object.fromEntries(labels.map((l,i) => [l.replace(':',''), vals[i]]));
+    prep  = info.Prep    ? `PT${info.Prep.match(/\d+/)[0]}M` : '';
+    cook  = info.Cook    ? `PT${info.Cook.match(/\d+/)[0]}M` : '';
+    total = info.Total   ? `PT${info.Total.match(/\d+/)[0]}M` : '';
+    recipeYield = info.Serves;
+    ingredients = $('section.ingredients ul li').toArray().map(li => $(li).text().trim());
+    sections = [];
+    $('section.instructions .instruction-section').each((_, sec) => {
+      const title = $(sec).find('h3').text().trim();
+      const steps = $(sec).find('.content p').toArray().map(p => $(p).text().trim());
+      sections.push({ title, steps });
+    });
+    nutritionData = {};
+    $('table.nutrition tr').each((_, tr) => {
+      const [th, td] = $(tr).find('th,td').toArray();
+      nutritionData[$(th).text().trim()] = $(td).text().trim();
+    });
+  }
 
-  // 3) Build JSON‑LD
+// ── SNIPPET 2: Replace old JSON‑LD builder (Step 3) with clean re‑emit ──
+
+  // 3) Build JSON‑LD (re‑emit a clean version)
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "Recipe",
     name,
     description: desc,
     image: img,
-    prepTime: `PT${info['Prep'].match(/\d+/)[0]}M`,
-    cookTime: `PT${info['Cook'].match(/\d+/)[0]}M`,
-    totalTime: `PT${info['Total'].match(/\d+/)[0]}M`,
-    recipeYield: info['Serves'],
+    prepTime: prep,
+    cookTime: cook,
+    totalTime: total,
+    recipeYield,
     recipeIngredient: ingredients,
     nutrition: {
-      "@type":"NutritionInformation",
-      calories: nutrition['Calories'],
-      proteinContent: nutrition['Protein'],
-      carbohydrateContent: nutrition['Carbs'],
-      fatContent: nutrition['Fat']
+      "@type": "NutritionInformation",
+      calories:            nutritionData.calories            || '',
+      proteinContent:      nutritionData.proteinContent      || '',
+      carbohydrateContent: nutritionData.carbohydrateContent || '',
+      fatContent:          nutritionData.fatContent          || ''
     },
     recipeInstructions: sections.map(sec => ({
-      "@type": sec.steps.length>1 ? "HowToSection" : "HowToStep",
+      "@type": sec.steps.length > 1 ? "HowToSection" : "HowToStep",
       name: sec.title,
-      ...(sec.steps.length>1
-        ? { itemListElement: sec.steps.map(s => ({ "@type":"HowToStep","text": s })) }
+      ...(sec.steps.length > 1
+        ? { itemListElement: sec.steps.map(s => ({ "@type": "HowToStep", text: s })) }
         : { text: sec.steps[0] })
     }))
   };
@@ -110,7 +155,7 @@ ${JSON.stringify(jsonLd, null, 2)}
 
   <h2>Nutrition (per serving)</h2>
   <ul>
-    ${Object.entries(nutrition).map(([k,v])=>`<li><strong>${k}:</strong> ${v}</li>`).join('')}
+    ${Object.entries(nutritionData).map(([k,v])=>`<li><strong>${k}:</strong> ${v}</li>`).join('')}
   </ul>
 </body>
 </html>`;

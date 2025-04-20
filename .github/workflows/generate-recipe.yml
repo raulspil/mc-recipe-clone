@@ -1,5 +1,9 @@
 name: Generate Recipe Page
 
+# grant this workflow push access to repo contents
+permissions:
+  contents: write
+
 on:
   workflow_dispatch:
     inputs:
