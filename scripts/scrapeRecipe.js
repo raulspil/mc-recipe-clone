@@ -9,7 +9,7 @@
  */
 import fs from 'fs';
 import axios from 'axios';
-import cheerio from 'cheerio';
+import { load } from 'cheerio';
 import slugify from 'slugify';
 
 async function main() {
@@ -21,7 +21,7 @@ async function main() {
 
   // 1) Fetch page
   const { data: html } = await axios.get(url);
-  const $ = cheerio.load(html);
+  const $ = load(html);
 
   // 2) Extract fields (selectors based on MindfulChef markup)
   const name = $('h1.css-s3pb72').first().text().trim();
