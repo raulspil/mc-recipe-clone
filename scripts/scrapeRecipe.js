@@ -32,7 +32,9 @@ const html = await cloudscraper.get(url, {
       'q=0.9,image/avif,image/webp,*/*;q=0.8'
   }
 });
-  const $ = load(html);
+ // ensure we pass a string into Cheerio
+  const htmlString = typeof html === 'string' ? html : html.toString();
+  const $ = load(htmlString);
 
    // 2) Try JSON‑LD first—if missing, fall back to manual DOM scraping
   const allJsonLd = $('script[type="application/ld+json"]')
