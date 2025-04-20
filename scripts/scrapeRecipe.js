@@ -8,9 +8,9 @@
  *     docs/salmon2.html
  */
 import fs from 'fs';
-import axios from 'axios';
+//import axios from 'axios';
 import { load } from 'cheerio';
-import slugify from 'slugify';
+//import slugify from 'slugify';
 import cloudscraper from 'cloudscraper';
 
 async function main() {
@@ -20,21 +20,21 @@ async function main() {
     process.exit(1);
   }
   
-// 1) Fetch with Cloudflare‐scraper so we get the real HTML (including JSON‑LD)
-const html = await cloudscraper.get(url, {
-  headers: {
-    'User-Agent':
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
-      'AppleWebKit/537.36 (KHTML, like Gecko) ' +
-      'Chrome/115.0.0.0 Safari/537.36',
-    'Accept':
-      'text/html,application/xhtml+xml,application/xml;' +
-      'q=0.9,image/avif,image/webp,*/*;q=0.8'
-  }
-});
- // ensure we pass a string into Cheerio
-  const htmlString = typeof html === 'string' ? html : html.toString();
-  const $ = load(htmlString);
+  // 1) Fetch with Cloudflare‐scraper so we get the real HTML (including JSON‑LD)
+   const html = await cloudscraper({
+     method: 'GET',
+     uri: url,
+     headers: {
+       'User-Agent':
+         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
+         'AppleWebKit/537.36 (KHTML, like Gecko) ' +
+         'Chrome/115.0.0.0 Safari/537.36',
+       'Accept':
+         'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8'
+     }
+   });
+   // now load the raw HTML string into Cheerio
+   const $ = load(html);
 
    // 2) Try JSON‑LD first—if missing, fall back to manual DOM scraping
   const allJsonLd = $('script[type="application/ld+json"]')
