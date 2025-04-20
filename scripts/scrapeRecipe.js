@@ -33,46 +33,62 @@ async function main() {
   });
   const $ = load(html);
 
-  // 2) Locate and parse the Recipe JSON‑LD block
+   // 2) Try JSON‑LD first—if missing, fall back to manual DOM scraping
   const allJsonLd = $('script[type="application/ld+json"]')
     .map((i, el) => {
       try { return JSON.parse($(el).html()); }
       catch (_) { return null; }
     })
     .get();
-  const recipeData = allJsonLd.find(obj => obj && obj['@type'] === 'Recipe');
-  if (!recipeData) {
-    throw new Error('Could not find Recipe JSON‑LD on page');
-  }
+  const recipeData = allJsonLd.find(o => o && o['@type'] === 'Recipe');
 
-  // 3) Extract fields straight from the JSON‑LD
-  const name        = recipeData.name || '';
-  const desc        = recipeData.description || '';
-  const img         = Array.isArray(recipeData.image) ? recipeData.image[0] : recipeData.image || '';
-  const prep        = recipeData.prepTime    || '';
-  const cook        = recipeData.cookTime    || '';
-  const total       = recipeData.totalTime   || '';
-  const recipeYield = recipeData.recipeYield || '';
-  const ingredients = recipeData.recipeIngredient || [];
-  const nutritionData = recipeData.nutrition || {};
-  const sections = Array.isArray(recipeData.recipeInstructions)
-    ? recipeData.recipeInstructions
-        .map(sec => {
+  // hybrid extraction
+  let name, desc, img, prep, cook, total, recipeYield, ingredients, nutritionData, sections;
+  if (recipeData && recipeData.name) {
+    // JSON‑LD extraction
+    name        = recipeData.name || '';
+    desc        = recipeData.description || '';
+    img         = Array.isArray(recipeData.image) ? recipeData.image[0] : recipeData.image || '';
+    prep        = recipeData.prepTime    || '';
+    cook        = recipeData.cookTime    || '';
+    total       = recipeData.totalTime   || '';
+    recipeYield = recipeData.recipeYield || '';
+    ingredients = recipeData.recipeIngredient || [];
+    nutritionData = recipeData.nutrition || {};
+    sections = Array.isArray(recipeData.recipeInstructions)
+      ? recipeData.recipeInstructions.map(sec => {
           if (sec['@type'] === 'HowToSection') {
-            return {
-              title: sec.name,
-              steps: sec.itemListElement.map(s => s.text)
-            };
-          } else if (sec['@type'] === 'HowToStep') {
-            return {
-              title: sec.name || '',
-              steps: [sec.text]
-            };
+            return { title: sec.name, steps: sec.itemListElement.map(s => s.text) };
           }
-          return null;
+          return { title: sec.name || '', steps: [sec.text] };
         })
-        .filter(Boolean)
-    : [];
+      : [];
+  } else {
+    // manual DOM scraping fallback (same as Salmon page)
+    name = $('h1.css-s3pb72').first().text().trim();
+    desc = $('div.css-1c4tiag').first().text().trim();
+    img  = $('img[alt]').first().attr('src') || '';
+    // times & servings
+    const labels = $('span.css-135ql6c').toArray().map(el => $(el).text().trim());
+    const vals   = $('a.css-8h2e5c, span.css-d9hq7u').toArray().map(el => $(el).text().trim());
+    const info   = Object.fromEntries(labels.map((l,i) => [l.replace(':',''), vals[i]]));
+    prep  = info.Prep    ? `PT${info.Prep.match(/\d+/)[0]}M` : '';
+    cook  = info.Cook    ? `PT${info.Cook.match(/\d+/)[0]}M` : '';
+    total = info.Total   ? `PT${info.Total.match(/\d+/)[0]}M` : '';
+    recipeYield = info.Serves;
+    ingredients = $('section.ingredients ul li').toArray().map(li => $(li).text().trim());
+    sections = [];
+    $('section.instructions .instruction-section').each((_, sec) => {
+      const title = $(sec).find('h3').text().trim();
+      const steps = $(sec).find('.content p').toArray().map(p => $(p).text().trim());
+      sections.push({ title, steps });
+    });
+    nutritionData = {};
+    $('table.nutrition tr').each((_, tr) => {
+      const [th, td] = $(tr).find('th,td').toArray();
+      nutritionData[$(th).text().trim()] = $(td).text().trim();
+    });
+  }
 
 // ── SNIPPET 2: Replace old JSON‑LD builder (Step 3) with clean re‑emit ──
 
