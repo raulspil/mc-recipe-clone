@@ -154,7 +154,7 @@ ${JSON.stringify(jsonLd, null, 2)}
 
   <h2>Nutrition (per serving)</h2>
   <ul>
-    ${Object.entries(nutrition).map(([k,v])=>`<li><strong>${k}:</strong> ${v}</li>`).join('')}
+    ${Object.entries(nutritionData).map(([k,v])=>`<li><strong>${k}:</strong> ${v}</li>`).join('')}
   </ul>
 </body>
 </html>`;
