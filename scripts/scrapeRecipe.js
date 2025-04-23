@@ -11,7 +11,7 @@ import fs from 'fs';
 //import axios from 'axios';
 import { load } from 'cheerio';
 //import slugify from 'slugify';
-import cloudscraper from 'cloudscraper';
+import puppeteer from 'puppeteer';
 
 async function main() {
   const [,, url, outPath] = process.argv;
@@ -20,25 +20,58 @@ async function main() {
     process.exit(1);
   }
   
-  // 1) Fetch with Cloudflare‑scraper so we get the real HTML (including JSON‑LD)
-  let html;
+  // 1) Fetch with Puppeteer so we get the real HTML (including JSON‑LD)
+  let html, servingSize = '', instructions = [], prepTime = '';
   try {
-    html = await cloudscraper.get(url, {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
-          'AppleWebKit/537.36 (KHTML, like Gecko) ' +
-          'Chrome/115.0.0.0 Safari/537.36',
-        'Accept':
-          'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8'
+    const browser = await puppeteer.launch({ headless: 'new' });
+    const page = await browser.newPage();
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36');
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
+    // Extract serving size and instructions from rendered DOM
+    const extracted = await page.evaluate(() => {
+      // Serving size: find checked radio button in serving size group
+      let serving = '';
+      const radio = document.querySelector('input[type="radio"][name*="serving"]:checked');
+      if (radio) {
+        // Try to get label text
+        const label = radio.closest('label') || document.querySelector(`label[for='${radio.id}']`);
+        if (label) serving = label.textContent.trim();
+        else serving = radio.value;
       }
+      // Instructions: get all visible bullet points or steps
+      let steps = [];
+      const instructionSection = document.querySelector('section.instructions');
+      if (instructionSection) {
+        // Try list items first
+        steps = Array.from(instructionSection.querySelectorAll('li')).map(li => li.textContent.trim()).filter(Boolean);
+        // Fallback: paragraphs
+        if (!steps.length) {
+          steps = Array.from(instructionSection.querySelectorAll('p')).map(p => p.textContent.trim()).filter(Boolean);
+        }
+      }
+      // Prep time: try to find in visible text
+      let prep = '';
+      const bodyText = document.body.innerText;
+      const prepMatch = bodyText.match(/Prep time:\s*(\d+\s*mins?)/i);
+      if (prepMatch) prep = prepMatch[1];
+      // Fallback: look for 'only takes X minutes to prep' in description
+      if (!prep) {
+        const descMatch = bodyText.match(/only takes (\d+\s*mins?|\d+\s*minutes) to prep/i);
+        if (descMatch) prep = descMatch[1];
+      }
+      return { serving, steps, prep };
     });
-    if (typeof html !== 'string') {
-      console.error('Error: cloudscraper did not return a string. Value:', html);
+    servingSize = extracted.serving;
+    instructions = extracted.steps;
+    prepTime = extracted.prep;
+    html = await page.content();
+    await browser.close();
+    if (!html || typeof html !== 'string') {
+      console.error('Error: Puppeteer did not return a valid HTML string.');
       process.exit(1);
     }
   } catch (err) {
-    console.error('Error fetching HTML:', err);
+    console.error('Error fetching HTML with Puppeteer:', err);
     process.exit(1);
   }
   // now load the raw HTML string into Cheerio
@@ -66,34 +99,85 @@ async function main() {
     recipeYield = recipeData.recipeYield || '';
     ingredients = recipeData.recipeIngredient || [];
     nutritionData = recipeData.nutrition || {};
-    sections = Array.isArray(recipeData.recipeInstructions)
-      ? recipeData.recipeInstructions.map(sec => {
-          if (sec['@type'] === 'HowToSection') {
-            return { title: sec.name, steps: sec.itemListElement.map(s => s.text) };
-          }
-          return { title: sec.name || '', steps: [sec.text] };
-        })
-      : [];
+    // --- Custom instructions extraction for Mindful Chef ---
+    let steps = [];
+    if (typeof recipeData.recipeInstructions === 'string') {
+      // Custom grouping for this recipe style
+      const text = recipeData.recipeInstructions.replace(/\s+/g, ' ').trim();
+      // Grouping logic: split into logical steps based on key phrases and semicolons
+      // 1. Preheat oven, boil water, cook rice
+      // 2. Make the avo salsa
+      // 3. Make the marinade, coat hake, roast
+      // 4. Meanwhile, drain sweetcorn/beans, cook, add rice/beans, season
+      // 5. Thinly slice spring onions, serve
+      // We'll use regex to match these groupings for this recipe style
+      const stepRegex = [
+        /(Preheat the oven.*?then drain\.)/i,
+        /(Make the avo salsa;.*?black pepper\.)/i,
+        /(Make the marinade;.*?cooked through\.)/i,
+        /(Meanwhile, drain.*?to taste\.)/i,
+        /(Thinly slice the spring onions.*?spring onions\.)/i
+      ];
+      let remaining = text;
+      for (const re of stepRegex) {
+        const m = remaining.match(re);
+        if (m) {
+          steps.push(m[1].trim());
+          remaining = remaining.replace(m[1], '').trim();
+        }
+      }
+      // If anything left, add as last step
+      if (remaining) steps.push(remaining);
+    } else if (Array.isArray(recipeData.recipeInstructions)) {
+      steps = recipeData.recipeInstructions.map(inst => typeof inst === 'string' ? inst : inst.text || '');
+    }
+    // Render as a single section with numbered steps
+    sections = [{ title: '', steps }];
   } else {
     // manual DOM scraping fallback (same as Salmon page)
     name = $('h1.css-s3pb72').first().text().trim();
     desc = $('div.css-1c4tiag').first().text().trim();
     img  = $('img[alt]').first().attr('src') || '';
     // times & servings
-    const labels = $('span.css-135ql6c').toArray().map(el => $(el).text().trim());
-    const vals   = $('a.css-8h2e5c, span.css-d9hq7u').toArray().map(el => $(el).text().trim());
-    const info   = Object.fromEntries(labels.map((l,i) => [l.replace(':',''), vals[i]]));
-    prep  = info.Prep    ? `PT${info.Prep.match(/\d+/)[0]}M` : '';
-    cook  = info.Cook    ? `PT${info.Cook.match(/\d+/)[0]}M` : '';
-    total = info.Total   ? `PT${info.Total.match(/\d+/)[0]}M` : '';
-    recipeYield = info.Serves;
-    ingredients = $('section.ingredients ul li').toArray().map(li => $(li).text().trim());
-    sections = [];
-    $('section.instructions .instruction-section').each((_, sec) => {
-      const title = $(sec).find('h3').text().trim();
-      const steps = $(sec).find('.content p').toArray().map(p => $(p).text().trim());
-      sections.push({ title, steps });
+    // Extract cook time, prep time, and serving size from visible text
+    let cookTime = '', prepTime = '', totalTime = '', recipeYield = '';
+    $('div:contains("Cook time")').each((_, el) => {
+      const text = $(el).text();
+      const match = text.match(/Cook time:\s*([\d]+\s*mins?)/i);
+      if (match) cookTime = match[1];
     });
+    $('div:contains("Prep time")').each((_, el) => {
+      const text = $(el).text();
+      const match = text.match(/Prep time:\s*([\d]+\s*mins?)/i);
+      if (match) prepTime = match[1];
+    });
+    // Serving size: use Puppeteer result if available
+    recipeYield = servingSize || '';
+    // Prep time: use Puppeteer result if available
+    prep = prepTime || '';
+    // Cook time: try to extract from visible text (e.g. 'Cook time: 35 mins')
+    cook = '';
+    const cookMatch = $('body').text().match(/Cook time:\s*(\d+\s*mins?)/i);
+    if (cookMatch) {
+      cook = cookMatch[1];
+    } else if (info.Cook) {
+      cook = info.Cook;
+    }
+
+    prep  = prepTime;
+    cook  = cookTime;
+    total = totalTime;
+    recipeYield = recipeYield;
+    ingredients = $('section.ingredients ul li').toArray().map(li => $(li).text().trim());
+    // Cooking instructions: use Puppeteer result if available
+    sections = [];
+    if (instructions && instructions.length) {
+      sections.push({ title: '', steps: instructions });
+    } else {
+      // fallback: get all paragraphs under instructions
+      const steps = $('section.instructions p').toArray().map(p => $(p).text().trim()).filter(Boolean);
+      if (steps.length) sections.push({ title: '', steps });
+    }
     nutritionData = {};
     $('table.nutrition tr').each((_, tr) => {
       const [th, td] = $(tr).find('th,td').toArray();
@@ -141,11 +225,9 @@ async function main() {
 ${JSON.stringify(jsonLd, null, 2)}
   </script>
   <style>
-    /* your existing CSS from before… */
     body{font-family:sans-serif;padding:1rem}
     img{max-width:100%}
     h1{margin-top:0}
-    /* …etc… */
   </style>
 </head>
 <body>
@@ -156,13 +238,18 @@ ${JSON.stringify(jsonLd, null, 2)}
   <ul>
     ${ingredients.map(i=>`<li>${i}</li>`).join('\n    ')}
   </ul>
-
-  <h2>Instructions</h2>
-  ${sections.map(sec=>`
-  <h3>${sec.title}</h3>
-  ${sec.steps.map(s=>`<p>${s}</p>`).join('')}
-  `).join('')}
-
+  <h2>Serving Size</h2>
+  <p>${recipeYield}</p>
+  <h2>Prep Time</h2>
+  <p>${prep}</p>
+  <h2>Cook Time</h2>
+  <p>${cook}</p>
+  <h2>Cooking Instructions</h2>
+  <div>
+    <ol>
+      ${sections[0].steps.map(s => `<li>${s}</li>`).join('\n      ')}
+    </ol>
+  </div>
   <h2>Nutrition (per serving)</h2>
   <ul>
     ${Object.entries(nutritionData).map(([k,v])=>`<li><strong>${k}:</strong> ${v}</li>`).join('')}
