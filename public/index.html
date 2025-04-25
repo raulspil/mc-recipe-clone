@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mindful Chef to Recipe Keeper Converter</title>
+  <style>
+    body { font-family: sans-serif; max-width: 600px; margin: 2em auto; }
+    textarea { width: 100%; min-height: 100px; }
+    .result { background: #f8f8f8; padding: 1em; margin-top: 1em; border-radius: 6px; }
+    button { padding: 0.5em 1em; }
+  </style>
+</head>
+<body>
+  <h1>Mindful Chef → Recipe Keeper Converter</h1>
+  <form id="convert-form">
+    <label for="url">Paste Mindful Chef Recipe URL:</label><br>
+    <input type="url" id="url" name="url" required style="width:100%"><br><br>
+    <button type="submit">Convert</button>
+  </form>
+  <div id="output" class="result" style="display:none;"></div>
+  <script>
+    document.getElementById('convert-form').onsubmit = async function(e) {
+      e.preventDefault();
+      const url = document.getElementById('url').value;
+      const output = document.getElementById('output');
+      output.style.display = 'none';
+      output.innerHTML = 'Converting...';
+      try {
+        const res = await fetch('/api/convert', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url })
+        });
+        const data = await res.json();
+        if (data.html) {
+          output.innerHTML = `<b>Copy this HTML into Recipe Keeper:</b><br><textarea readonly>${data.html}</textarea>`;
+        } else {
+          output.innerHTML = `<span style='color:red'>${data.error || 'Unknown error'}</span>`;
+        }
+      } catch (err) {
+        output.innerHTML = `<span style='color:red'>${err.message}</span>`;
+      }
+      output.style.display = 'block';
+    };
+  </script>
+</body>
+</html>
