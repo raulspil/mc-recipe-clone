@@ -5,15 +5,17 @@ export default function Home() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [staticUrl, setStaticUrl] = useState(null);
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e, endpoint) => {
     e.preventDefault();
     setError(null);
     setResult(null);
+    setStaticUrl(null);
     setIsLoading(true);
 
     try {
-      const response = await fetch('/api/convert', {
+      const response = await fetch(`/api/${endpoint}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -26,7 +28,11 @@ export default function Home() {
         throw new Error(data.error || 'Something went wrong');
       }
 
-      setResult(data);
+      if (endpoint === 'generate-static') {
+        setStaticUrl(data.url);
+      } else {
+        setResult(data);
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -36,28 +42,90 @@ export default function Home() {
 
   return (
     <div style={{ maxWidth: '800px', margin: '0 auto', padding: '20px' }}>
-      <h1>Mindful Chef Recipe Converter</h1>
-      <form onSubmit={handleSubmit} style={{ marginBottom: '20px' }}>
+      <h1>Mindful Chef → Recipe Keeper Converter</h1>
+      <form style={{ marginBottom: '20px' }}>
         <input
           type="text"
           value={url}
           onChange={(e) => setUrl(e.target.value)}
-          placeholder="Enter Mindful Chef recipe URL"
-          style={{ width: '100%', padding: '8px', marginBottom: '10px' }}
+          placeholder="Paste Mindful Chef Recipe URL"
+          style={{ 
+            width: '100%', 
+            padding: '12px',
+            marginBottom: '15px',
+            borderRadius: '4px',
+            border: '1px solid #ccc'
+          }}
           disabled={isLoading}
         />
-        <button 
-          type="submit" 
-          style={{ padding: '8px 16px' }}
-          disabled={isLoading}
-        >
-          {isLoading ? 'Converting...' : 'Convert Recipe'}
-        </button>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button 
+            onClick={(e) => handleSubmit(e, 'convert')}
+            style={{ 
+              padding: '12px 24px',
+              backgroundColor: '#007bff',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: isLoading ? 'wait' : 'pointer',
+              opacity: isLoading ? 0.7 : 1
+            }}
+            disabled={isLoading}
+          >
+            {isLoading ? 'Converting...' : 'Convert'}
+          </button>
+          <button 
+            onClick={(e) => handleSubmit(e, 'generate-static')}
+            style={{ 
+              padding: '12px 24px',
+              backgroundColor: '#28a745',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: isLoading ? 'wait' : 'pointer',
+              opacity: isLoading ? 0.7 : 1
+            }}
+            disabled={isLoading}
+          >
+            {isLoading ? 'Generating...' : 'Generate Static URL'}
+          </button>
+        </div>
       </form>
 
       {error && (
-        <div style={{ color: 'red', marginBottom: '20px' }}>
+        <div style={{ 
+          color: '#dc3545',
+          padding: '15px',
+          marginBottom: '20px',
+          backgroundColor: '#f8d7da',
+          borderRadius: '4px'
+        }}>
           Error: {error}
+        </div>
+      )}
+
+      {staticUrl && (
+        <div style={{
+          padding: '15px',
+          marginBottom: '20px',
+          backgroundColor: '#d4edda',
+          borderRadius: '4px',
+          color: '#155724'
+        }}>
+          <p>✅ Static URL generated! Copy this URL into Recipe Keeper:</p>
+          <input
+            type="text"
+            value={staticUrl}
+            readOnly
+            onClick={(e) => e.target.select()}
+            style={{
+              width: '100%',
+              padding: '8px',
+              marginTop: '10px',
+              border: '1px solid #28a745',
+              borderRadius: '4px'
+            }}
+          />
         </div>
       )}
 
