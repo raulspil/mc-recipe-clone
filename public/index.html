@@ -29,7 +29,7 @@
       output.style.display = 'none';
       output.innerHTML = 'Converting...';
       try {
-        const res = await fetch('http://localhost:4000/api/convert', {
+        const res = await fetch('/api/convert', {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
@@ -57,7 +57,7 @@
       staticOutput.style.display = 'none';
       staticOutput.innerHTML = 'Generating static URL...';
       try {
-        const res = await fetch('http://localhost:4000/api/generate-static', {
+        const res = await fetch('/api/generate-static', {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
