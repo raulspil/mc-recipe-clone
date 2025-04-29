@@ -9,6 +9,8 @@ const nextConfig = {
   experimental: {
     serverComponentsExternalPackages: ['puppeteer'],
   },
+  // Add output configuration for serverless deployment
+  output: 'standalone',
 };
 
 module.exports = nextConfig; 
