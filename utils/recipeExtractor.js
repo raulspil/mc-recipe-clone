@@ -1,7 +1,67 @@
 import { load } from 'cheerio';
-import puppeteer from 'puppeteer';
+import puppeteer from 'puppeteer-core';
+import sanitizeHtml from 'sanitize-html';
+
+const PUPPETEER_OPTIONS = {
+  headless: 'new',
+  args: [
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-dev-shm-usage',
+    '--disable-accelerated-2d-canvas',
+    '--no-first-run',
+    '--no-zygote',
+    '--single-process',
+    '--disable-gpu',
+    '--js-flags=--max-old-space-size=512'
+  ],
+  executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+  timeout: 30000, // 30 seconds timeout
+};
+
+const SANITIZE_OPTIONS = {
+  allowedTags: ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'ul', 'ol', 'li', 'strong', 'em', 'br', 'img'],
+  allowedAttributes: {
+    img: ['src', 'alt', 'style'],
+    '*': ['style']
+  },
+  allowedStyles: {
+    '*': {
+      'max-width': [/^100%$/],
+      'width': [/^100%$/]
+    }
+  }
+};
+
+// Determine the correct Chrome executable path based on environment
+const getChromePath = () => {
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+    return process.env.PUPPETEER_EXECUTABLE_PATH;
+  }
+  
+  // For local development on Windows
+  if (process.platform === 'win32') {
+    return 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+  }
+  
+  // For local development on macOS
+  if (process.platform === 'darwin') {
+    return '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+  }
+  
+  // For local development on Linux
+  return '/usr/bin/google-chrome';
+};
 
 export async function extractRecipe(url) {
+  if (!url || typeof url !== 'string') {
+    throw new Error('Invalid URL provided');
+  }
+
+  if (!url.startsWith('https://www.mindfulchef.com/')) {
+    throw new Error('Only Mindful Chef recipe URLs are supported');
+  }
+
   let browser;
   try {
     browser = await puppeteer.launch({ 
@@ -16,13 +76,28 @@ export async function extractRecipe(url) {
         '--single-process',
         '--disable-gpu'
       ],
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH
     });
     const page = await browser.newPage();
+    
+    // Set timeout for navigation
+    await page.setDefaultNavigationTimeout(30000);
+    
     await page.setUserAgent(
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
       '(KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
     );
+
+    // Add request interception to block unnecessary resources
+    await page.setRequestInterception(true);
+    page.on('request', (request) => {
+      if (['image', 'stylesheet', 'font', 'media'].includes(request.resourceType())) {
+        request.abort();
+      } else {
+        request.continue();
+      }
+    });
+
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
 
     // Extract instructions & serving size
@@ -135,10 +210,14 @@ export async function extractRecipe(url) {
       }
       out += '</ul>';
     }
-    return { html: out, name };
+
+    // Sanitize the final HTML output
+    const sanitizedHtml = sanitizeHtml(out, SANITIZE_OPTIONS);
+    
+    return { html: sanitizedHtml, name };
   } catch (error) {
     console.error('Error in extractRecipe:', error);
-    throw error;
+    throw new Error(`Failed to extract recipe: ${error.message}`);
   } finally {
     if (browser) {
       await browser.close();

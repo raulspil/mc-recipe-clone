@@ -4,11 +4,13 @@ export default function Home() {
   const [url, setUrl] = useState('');
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
     setResult(null);
+    setIsLoading(true);
 
     try {
       const response = await fetch('/api/convert', {
@@ -27,6 +29,8 @@ export default function Home() {
       setResult(data);
     } catch (err) {
       setError(err.message);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -40,9 +44,14 @@ export default function Home() {
           onChange={(e) => setUrl(e.target.value)}
           placeholder="Enter Mindful Chef recipe URL"
           style={{ width: '100%', padding: '8px', marginBottom: '10px' }}
+          disabled={isLoading}
         />
-        <button type="submit" style={{ padding: '8px 16px' }}>
-          Convert Recipe
+        <button 
+          type="submit" 
+          style={{ padding: '8px 16px' }}
+          disabled={isLoading}
+        >
+          {isLoading ? 'Converting...' : 'Convert Recipe'}
         </button>
       </form>
 
