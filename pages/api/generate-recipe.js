@@ -1,6 +1,6 @@
 import { extractRecipe } from '../../utils/recipeExtractor';
-import { saveRecipe } from '../../utils/recipeStorage';
 import slugify from 'slugify';
+import { saveRecipe } from '../../lib/ephemeralStore';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -14,11 +14,10 @@ export default async function handler(req, res) {
 
   try {
     const { html, name } = await extractRecipe(url);
-    
-    // Create a slug from the recipe name
-    const slug = slugify(name, { lower: true, strict: true });
-    
-    // Wrap the recipe HTML in a complete HTML document
+    // Create a unique slug from the recipe name and timestamp
+    const slug = slugify(name, { lower: true, strict: true }) + '-' + Date.now();
+
+    // Wrap the recipe HTML in a complete HTML document (with schema.org microdata if needed)
     const fullHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -42,20 +41,12 @@ export default async function handler(req, res) {
 </body>
 </html>`;
 
-    // Save the recipe to our temporary storage
-    const saved = await saveRecipe({
-      name,
-      slug,
-      html: fullHtml,
-      url: `/recipes/${slug}.html`
-    });
+    // Store in ephemeral in-memory store
+    saveRecipe(slug, fullHtml);
 
-    if (!saved) {
-      throw new Error('Failed to save recipe');
-    }
-
+    // Return the public URL
     res.status(200).json({ 
-      url: `/recipes/${slug}.html`,
+      url: `/recipe/${slug}`,
       name: name
     });
   } catch (e) {
