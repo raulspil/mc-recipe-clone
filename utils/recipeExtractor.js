@@ -1,23 +1,6 @@
 import { load } from 'cheerio';
-import puppeteer from 'puppeteer-core';
+import puppeteer from 'puppeteer';
 import sanitizeHtml from 'sanitize-html';
-
-const PUPPETEER_OPTIONS = {
-  headless: 'new',
-  args: [
-    '--no-sandbox',
-    '--disable-setuid-sandbox',
-    '--disable-dev-shm-usage',
-    '--disable-accelerated-2d-canvas',
-    '--no-first-run',
-    '--no-zygote',
-    '--single-process',
-    '--disable-gpu',
-    '--js-flags=--max-old-space-size=512'
-  ],
-  executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
-  timeout: 30000, // 30 seconds timeout
-};
 
 const SANITIZE_OPTIONS = {
   allowedTags: ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'ul', 'ol', 'li', 'strong', 'em', 'br', 'img'],
@@ -31,26 +14,6 @@ const SANITIZE_OPTIONS = {
       'width': [/^100%$/]
     }
   }
-};
-
-// Determine the correct Chrome executable path based on environment
-const getChromePath = () => {
-  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-    return process.env.PUPPETEER_EXECUTABLE_PATH;
-  }
-  
-  // For local development on Windows
-  if (process.platform === 'win32') {
-    return 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
-  }
-  
-  // For local development on macOS
-  if (process.platform === 'darwin') {
-    return '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-  }
-  
-  // For local development on Linux
-  return '/usr/bin/google-chrome';
 };
 
 export async function extractRecipe(url) {
@@ -75,8 +38,7 @@ export async function extractRecipe(url) {
         '--no-zygote',
         '--single-process',
         '--disable-gpu'
-      ],
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH
+      ]
     });
     const page = await browser.newPage();
     

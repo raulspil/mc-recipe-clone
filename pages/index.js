@@ -13,6 +13,7 @@ export default function Home() {
     setIsLoading(true);
 
     try {
+      // Always use a relative URL for the API call
       const response = await fetch('/api/generate-recipe', {
         method: 'POST',
         headers: {
