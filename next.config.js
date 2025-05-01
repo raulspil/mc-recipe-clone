@@ -2,12 +2,12 @@
 const nextConfig = {
   webpack: (config, { isServer }) => {
     if (isServer) {
-      config.externals.push('puppeteer');
+      config.externals.push('puppeteer-core', 'chrome-aws-lambda');
     }
     return config;
   },
   experimental: {
-    serverComponentsExternalPackages: ['puppeteer'],
+    serverComponentsExternalPackages: ['puppeteer-core', 'chrome-aws-lambda'],
   },
   // Add output configuration for serverless deployment
   output: 'standalone',

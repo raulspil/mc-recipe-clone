@@ -1,5 +1,6 @@
 import { load } from 'cheerio';
-import puppeteer from 'puppeteer';
+import chromium from 'chrome-aws-lambda';
+import puppeteer from 'puppeteer-core';
 import sanitizeHtml from 'sanitize-html';
 
 const SANITIZE_OPTIONS = {
@@ -27,19 +28,15 @@ export async function extractRecipe(url) {
 
   let browser;
   try {
-    browser = await puppeteer.launch({ 
-      headless: 'new',
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--single-process',
-        '--disable-gpu'
-      ]
+    // Launch Chrome with AWS Lambda
+    browser = await puppeteer.launch({
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath: await chromium.executablePath,
+      headless: chromium.headless,
+      ignoreHTTPSErrors: true,
     });
+    
     const page = await browser.newPage();
     
     // Set timeout for navigation
