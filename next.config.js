@@ -25,6 +25,13 @@ const nextConfig = {
       },
     ];
   },
+  // Ensure Chrome AWS Lambda is properly bundled
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      config.externals.push('puppeteer-core', 'chrome-aws-lambda');
+    }
+    return config;
+  },
 };
 
 module.exports = nextConfig; 

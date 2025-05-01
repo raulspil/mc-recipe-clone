@@ -9,5 +9,11 @@
         }
       ]
     }
-  ]
+  ],
+  "functions": {
+    "api/generate-recipe.js": {
+      "memory": 3008,
+      "maxDuration": 60
+    }
+  }
 } 

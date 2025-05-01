@@ -29,11 +29,27 @@ export async function extractRecipe(url) {
   let browser;
   try {
     // Launch Chrome with AWS Lambda
+    const executablePath = await chromium.executablePath || process.env.CHROME_EXECUTABLE_PATH;
+    
+    if (!executablePath) {
+      throw new Error('Could not find Chrome executable path');
+    }
+
     browser = await puppeteer.launch({
-      args: chromium.args,
+      args: [
+        ...chromium.args,
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--single-process',
+        '--disable-gpu'
+      ],
       defaultViewport: chromium.defaultViewport,
-      executablePath: await chromium.executablePath,
-      headless: chromium.headless,
+      executablePath,
+      headless: true,
       ignoreHTTPSErrors: true,
     });
     
